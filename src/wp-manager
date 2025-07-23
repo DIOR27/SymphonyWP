@@ -72,6 +72,7 @@ function create_instance() {
 
   mkdir -p "$SITE_DIR"
 
+  # Config por defecto
   cat > "$SITE_DIR/config.env" <<ENV
 UPLOAD_MAX_FILESIZE=256M
 POST_MAX_SIZE=256M
@@ -82,19 +83,21 @@ ENV
   load_env_vars "$SITE_DIR"
   PORT=$(get_next_port)
 
+  # uploads.ini
   cat > "$SITE_DIR/uploads.ini" <<INI
-upload_max_filesize=${UPLOAD_MAX_FILESIZE}
-post_max_size=${POST_MAX_SIZE}
-memory_limit=${MEMORY_LIMIT}
+upload_max_filesize = ${UPLOAD_MAX_FILESIZE}
+post_max_size = ${POST_MAX_SIZE}
+memory_limit = ${MEMORY_LIMIT}
 INI
 
+  # docker-compose.yml
   cat > "$SITE_DIR/docker-compose.yml" <<EOF
 services:
   db:
     image: mariadb:latest
     container_name: ${SITE_NAME}_db
     volumes:
-      - db_data:/var/lib/mysql
+      - db_data_${SITE_NAME}:/var/lib/mysql
       - ./db-init.sql:/docker-entrypoint-initdb.d/init.sql
     restart: always
     environment:
@@ -111,7 +114,7 @@ services:
     image: wordpress:latest
     container_name: ${SITE_NAME}_web
     volumes:
-      - wp_data:/var/www/html
+      - wp_data_${SITE_NAME}:/var/www/html
       - ./uploads.ini:/usr/local/etc/php/conf.d/uploads.ini
     ports:
       - "${PORT}:80"
@@ -122,18 +125,22 @@ services:
       WORDPRESS_DB_USER: wp_user
       WORDPRESS_DB_PASSWORD: wp_pass
       WP_DEBUG: "${WP_DEBUG}"
+      PHP_MEMORY_LIMIT: ${MEMORY_LIMIT}
+      PHP_UPLOAD_MAX_FILESIZE: ${UPLOAD_MAX_FILESIZE}
+      PHP_POST_MAX_SIZE: ${POST_MAX_SIZE}
     networks:
       - $DOCKER_NETWORK
 
 volumes:
-  db_data:
-  wp_data:
+  db_data_${SITE_NAME}:
+  wp_data_${SITE_NAME}:
 
 networks:
   $DOCKER_NETWORK:
     external: true
 EOF
 
+  # SQL init script
   cat > "$SITE_DIR/db-init.sql" <<SQL
 CREATE DATABASE IF NOT EXISTS wordpress;
 CREATE USER IF NOT EXISTS 'wp_user'@'%' IDENTIFIED BY 'wp_pass';
@@ -147,15 +154,15 @@ SQL
 }
 
 function start_instance() {
-  (cd "$BASE_DIR/$1" && docker compose up -d)
+  (cd "$BASE_DIR/$1" && docker compose start)
 }
 
 function stop_instance() {
-  (cd "$BASE_DIR/$1" && docker compose down)
+  (cd "$BASE_DIR/$1" && docker compose stop)
 }
 
 function delete_instance() {
-  stop_instance "$1"
+  (cd "$BASE_DIR/$1" && docker compose down)
   rm -rf "$BASE_DIR/$1"
   echo -e "${GREEN}Instancia '$1' eliminada.${NC}"
 }
@@ -171,7 +178,6 @@ function config_instance() {
 
 function edit_config_instance() {
   SITE_NAME="$1"
-  EDITOR_PARAM="$2"
   CONFIG_FILE="$BASE_DIR/$SITE_NAME/config.env"
   SITE_DIR="$BASE_DIR/$SITE_NAME"
 
@@ -179,14 +185,10 @@ function edit_config_instance() {
 
   TMP_HASH=$(md5sum "$CONFIG_FILE" | awk '{print $1}')
 
-  if [ -n "$EDITOR_PARAM" ]; then
-    EDITOR_CMD="$EDITOR_PARAM"
-  else
-    EDITOR_CMD=$(get_editor)
-  fi
+  EDITOR_CMD="${2:-$(command -v nano || command -v vim)}"
 
   if [ -z "$EDITOR_CMD" ]; then
-    echo -e "${RED}No hay editor disponible. Cancela operación.${NC}"
+    echo -e "${RED}No se pudo determinar un editor. Usa 'wp-manager edit-config <sitio> nano|vim'.${NC}"
     exit 1
   fi
 
@@ -194,13 +196,7 @@ function edit_config_instance() {
 
   NEW_HASH=$(md5sum "$CONFIG_FILE" | awk '{print $1}')
   if [ "$TMP_HASH" != "$NEW_HASH" ]; then
-    echo -e "${GREEN}Configuración modificada. Actualizando uploads.ini y reiniciando WordPress...${NC}"
-    load_env_vars "$SITE_DIR"
-    cat > "$SITE_DIR/uploads.ini" <<INI
-upload_max_filesize=${UPLOAD_MAX_FILESIZE}
-post_max_size=${POST_MAX_SIZE}
-memory_limit=${MEMORY_LIMIT}
-INI
+    echo -e "${GREEN}Configuración modificada. Reiniciando contenedor 'wordpress'...${NC}"
     (cd "$SITE_DIR" && docker compose restart wordpress)
   else
     echo -e "${GREEN}Sin cambios detectados. No se reinicia.${NC}"
