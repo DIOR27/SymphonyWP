@@ -1,0 +1,148 @@
+#!/bin/bash
+
+set -e
+
+BASE_DIR="/opt/wp-instances"
+DOCKER_NETWORK="wp_net"
+MYSQL_ROOT_PASSWORD="supersecret"
+
+# Estilos
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+NC='\033[0m'
+
+function usage() {
+  echo -e "${RED}Uso:${NC} $0 {create <sitio> | start <sitio> | stop <sitio> | delete <sitio> | list}"
+  exit 1
+}
+
+function check_dependencies() {
+  if ! command -v docker &> /dev/null; then
+    echo -e "${RED}Error: Docker no está instalado.${NC}"
+    exit 1
+  fi
+
+  if ! docker compose version &> /dev/null; then
+    echo -e "${RED}Error: 'docker compose' no está disponible. Usa Docker 20.10+ con el plugin de Compose.${NC}"
+    exit 1
+  fi
+}
+
+function ensure_network() {
+  if ! docker network ls | grep -q "$DOCKER_NETWORK"; then
+    docker network create "$DOCKER_NETWORK"
+  fi
+}
+
+function get_next_port() {
+  LAST_PORT=$(find "$BASE_DIR" -name docker-compose.yml -exec grep -hoP '(\d+):80' {} \; | cut -d: -f1 | sort -n | tail -1)
+  if [ -z "$LAST_PORT" ]; then
+    echo 8081
+  else
+    echo $((LAST_PORT + 1))
+  fi
+}
+
+function create_instance() {
+  SITE_NAME="$1"
+  SITE_DIR="$BASE_DIR/$SITE_NAME"
+
+  if [ -d "$SITE_DIR" ]; then
+    echo -e "${RED}Ya existe una instancia con el nombre '$SITE_NAME'${NC}"
+    exit 1
+  fi
+
+  mkdir -p "$SITE_DIR"
+
+  PORT=$(get_next_port)
+
+  cat > "$SITE_DIR/docker-compose.yml" <<EOF
+services:
+  db:
+    image: mariadb:latest
+    container_name: ${SITE_NAME}_db
+    volumes:
+      - db_data:/var/lib/mysql
+    restart: always
+    environment:
+      MYSQL_DATABASE: wordpress
+      MYSQL_USER: wp_user
+      MYSQL_PASSWORD: wp_pass
+      MYSQL_ROOT_PASSWORD: $MYSQL_ROOT_PASSWORD
+    networks:
+      - $DOCKER_NETWORK
+
+  wordpress:
+    depends_on:
+      - db
+    image: wordpress:latest
+    container_name: ${SITE_NAME}_web
+    volumes:
+      - wp_data:/var/www/html
+    ports:
+      - "${PORT}:80"
+    restart: always
+    environment:
+      WORDPRESS_DB_HOST: db:3306
+      WORDPRESS_DB_NAME: wordpress
+      WORDPRESS_DB_USER: wp_user
+      WORDPRESS_DB_PASSWORD: wp_pass
+    networks:
+      - $DOCKER_NETWORK
+
+volumes:
+  db_data:
+  wp_data:
+
+networks:
+  $DOCKER_NETWORK:
+    external: true
+EOF
+
+  echo -e "${GREEN}Instancia '$SITE_NAME' creada. Ejecutando...${NC}"
+  if (cd "$SITE_DIR" && docker compose up -d); then
+    echo -e "${GREEN}Instancia disponible en http://localhost:${PORT}${NC}"
+  else
+    echo -e "${RED}Error al iniciar la instancia. Revisa los logs con 'docker compose logs'.${NC}"
+  fi
+}
+
+function start_instance() {
+  SITE_NAME="$1"
+  SITE_DIR="$BASE_DIR/$SITE_NAME"
+  (cd "$SITE_DIR" && docker compose up -d)
+}
+
+function stop_instance() {
+  SITE_NAME="$1"
+  SITE_DIR="$BASE_DIR/$SITE_NAME"
+  (cd "$SITE_DIR" && docker compose down)
+}
+
+function delete_instance() {
+  SITE_NAME="$1"
+  stop_instance "$SITE_NAME"
+  rm -rf "$BASE_DIR/$SITE_NAME"
+  echo -e "${GREEN}Instancia '$SITE_NAME' eliminada.${NC}"
+}
+
+function list_instances() {
+  echo -e "${GREEN}Instancias disponibles:${NC}"
+  ls "$BASE_DIR"
+}
+
+# MAIN
+[ "$EUID" -ne 0 ] && echo -e "${RED}Este script debe ejecutarse como root.${NC}" && exit 1
+
+check_dependencies
+mkdir -p "$BASE_DIR"
+ensure_network
+
+case "$1" in
+  create) [ -n "$2" ] && create_instance "$2" || usage ;;
+  start)  [ -n "$2" ] && start_instance "$2" || usage ;;
+  stop)   [ -n "$2" ] && stop_instance "$2" || usage ;;
+  delete) [ -n "$2" ] && delete_instance "$2" || usage ;;
+  list)   list_instances ;;
+  *)      usage ;;
+esac
