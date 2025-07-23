@@ -3,58 +3,90 @@
 set -e
 
 BASE_DIR="/opt/wp-instances"
+GLOBAL_CONFIG="/etc/wp-manager/global.env"
 DOCKER_NETWORK="wp_net"
 MYSQL_ROOT_PASSWORD="supersecret"
 
-# Estilos
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 NC='\033[0m'
 
 function usage() {
-  echo -e "${RED}Uso:${NC} $0 {create <sitio> | start <sitio> | stop <sitio> | delete <sitio> | list}"
-  exit 1
+cat <<EOF
+${GREEN}wp-manager${NC} - Gestor de instancias WordPress en contenedores
+
+Uso:
+  wp-manager create <sitio>
+  wp-manager start <sitio>
+  wp-manager stop <sitio>
+  wp-manager delete <sitio>
+  wp-manager list
+  wp-manager config <sitio>
+  wp-manager edit-config <sitio> [nano|vim]
+  wp-manager help
+
+Parámetros configurables (por sitio o global en /etc/wp-manager/global.env):
+  UPLOAD_MAX_FILESIZE=256M
+  POST_MAX_SIZE=256M
+  MEMORY_LIMIT=256M
+  WP_DEBUG=false
+
+Para cambiar configuración:
+  wp-manager edit-config <sitio> [nano|vim]
+  (WordPress se reinicia si se detectan cambios)
+EOF
+exit 0
 }
 
 function check_dependencies() {
   if ! command -v docker &> /dev/null; then
-    echo -e "${RED}Error: Docker no está instalado.${NC}"
+    echo -e "${RED}Docker no está instalado.${NC}"
     exit 1
   fi
-
   if ! docker compose version &> /dev/null; then
-    echo -e "${RED}Error: 'docker compose' no está disponible. Usa Docker 20.10+ con el plugin de Compose.${NC}"
+    echo -e "${RED}'docker compose' no está disponible.${NC}"
     exit 1
   fi
 }
 
 function ensure_network() {
-  if ! docker network ls | grep -q "$DOCKER_NETWORK"; then
-    docker network create "$DOCKER_NETWORK"
-  fi
+  docker network inspect "$DOCKER_NETWORK" &>/dev/null || docker network create "$DOCKER_NETWORK"
 }
 
 function get_next_port() {
   LAST_PORT=$(find "$BASE_DIR" -name docker-compose.yml -exec grep -hoP '(\d+):80' {} \; | cut -d: -f1 | sort -n | tail -1)
-  if [ -z "$LAST_PORT" ]; then
-    echo 8081
-  else
-    echo $((LAST_PORT + 1))
-  fi
+  echo $((LAST_PORT > 0 ? LAST_PORT + 1 : 8081))
+}
+
+function load_env_vars() {
+  local CONFIG_FILE="$1/config.env"
+  [ -f "$GLOBAL_CONFIG" ] && source "$GLOBAL_CONFIG"
+  [ -f "$CONFIG_FILE" ] && source "$CONFIG_FILE"
 }
 
 function create_instance() {
   SITE_NAME="$1"
   SITE_DIR="$BASE_DIR/$SITE_NAME"
 
-  if [ -d "$SITE_DIR" ]; then
-    echo -e "${RED}Ya existe una instancia con el nombre '$SITE_NAME'${NC}"
-    exit 1
-  fi
+  [ -d "$SITE_DIR" ] && { echo -e "${RED}Ya existe '$SITE_NAME'.${NC}"; exit 1; }
 
   mkdir -p "$SITE_DIR"
 
+  cat > "$SITE_DIR/config.env" <<ENV
+UPLOAD_MAX_FILESIZE=256M
+POST_MAX_SIZE=256M
+MEMORY_LIMIT=256M
+WP_DEBUG=false
+ENV
+
+  load_env_vars "$SITE_DIR"
   PORT=$(get_next_port)
+
+  cat > "$SITE_DIR/uploads.ini" <<INI
+upload_max_filesize=${UPLOAD_MAX_FILESIZE}
+post_max_size=${POST_MAX_SIZE}
+memory_limit=${MEMORY_LIMIT}
+INI
 
   cat > "$SITE_DIR/docker-compose.yml" <<EOF
 services:
@@ -63,6 +95,7 @@ services:
     container_name: ${SITE_NAME}_db
     volumes:
       - db_data:/var/lib/mysql
+      - ./db-init.sql:/docker-entrypoint-initdb.d/init.sql
     restart: always
     environment:
       MYSQL_DATABASE: wordpress
@@ -79,6 +112,7 @@ services:
     container_name: ${SITE_NAME}_web
     volumes:
       - wp_data:/var/www/html
+      - ./uploads.ini:/usr/local/etc/php/conf.d/uploads.ini
     ports:
       - "${PORT}:80"
     restart: always
@@ -87,6 +121,7 @@ services:
       WORDPRESS_DB_NAME: wordpress
       WORDPRESS_DB_USER: wp_user
       WORDPRESS_DB_PASSWORD: wp_pass
+      WP_DEBUG: "${WP_DEBUG}"
     networks:
       - $DOCKER_NETWORK
 
@@ -99,31 +134,30 @@ networks:
     external: true
 EOF
 
-  echo -e "${GREEN}Instancia '$SITE_NAME' creada. Ejecutando...${NC}"
-  if (cd "$SITE_DIR" && docker compose up -d); then
-    echo -e "${GREEN}Instancia disponible en http://localhost:${PORT}${NC}"
-  else
-    echo -e "${RED}Error al iniciar la instancia. Revisa los logs con 'docker compose logs'.${NC}"
-  fi
+  cat > "$SITE_DIR/db-init.sql" <<SQL
+CREATE DATABASE IF NOT EXISTS wordpress;
+CREATE USER IF NOT EXISTS 'wp_user'@'%' IDENTIFIED BY 'wp_pass';
+GRANT ALL PRIVILEGES ON wordpress.* TO 'wp_user'@'%';
+FLUSH PRIVILEGES;
+SQL
+
+  echo -e "${GREEN}Instancia '$SITE_NAME' creada.${NC}"
+  (cd "$SITE_DIR" && docker compose up -d && docker restart ${SITE_NAME}_web)
+  echo -e "${GREEN}Disponible en http://localhost:${PORT}${NC}"
 }
 
 function start_instance() {
-  SITE_NAME="$1"
-  SITE_DIR="$BASE_DIR/$SITE_NAME"
-  (cd "$SITE_DIR" && docker compose up -d)
+  (cd "$BASE_DIR/$1" && docker compose up -d)
 }
 
 function stop_instance() {
-  SITE_NAME="$1"
-  SITE_DIR="$BASE_DIR/$SITE_NAME"
-  (cd "$SITE_DIR" && docker compose down)
+  (cd "$BASE_DIR/$1" && docker compose down)
 }
 
 function delete_instance() {
-  SITE_NAME="$1"
-  stop_instance "$SITE_NAME"
-  rm -rf "$BASE_DIR/$SITE_NAME"
-  echo -e "${GREEN}Instancia '$SITE_NAME' eliminada.${NC}"
+  stop_instance "$1"
+  rm -rf "$BASE_DIR/$1"
+  echo -e "${GREEN}Instancia '$1' eliminada.${NC}"
 }
 
 function list_instances() {
@@ -131,18 +165,62 @@ function list_instances() {
   ls "$BASE_DIR"
 }
 
+function config_instance() {
+  cat "$BASE_DIR/$1/config.env"
+}
+
+function edit_config_instance() {
+  SITE_NAME="$1"
+  EDITOR_PARAM="$2"
+  CONFIG_FILE="$BASE_DIR/$SITE_NAME/config.env"
+  SITE_DIR="$BASE_DIR/$SITE_NAME"
+
+  [ ! -f "$CONFIG_FILE" ] && { echo -e "${RED}Instancia '$SITE_NAME' no encontrada.${NC}"; exit 1; }
+
+  TMP_HASH=$(md5sum "$CONFIG_FILE" | awk '{print $1}')
+
+  if [ -n "$EDITOR_PARAM" ]; then
+    EDITOR_CMD="$EDITOR_PARAM"
+  else
+    EDITOR_CMD=$(get_editor)
+  fi
+
+  if [ -z "$EDITOR_CMD" ]; then
+    echo -e "${RED}No hay editor disponible. Cancela operación.${NC}"
+    exit 1
+  fi
+
+  $EDITOR_CMD "$CONFIG_FILE"
+
+  NEW_HASH=$(md5sum "$CONFIG_FILE" | awk '{print $1}')
+  if [ "$TMP_HASH" != "$NEW_HASH" ]; then
+    echo -e "${GREEN}Configuración modificada. Actualizando uploads.ini y reiniciando WordPress...${NC}"
+    load_env_vars "$SITE_DIR"
+    cat > "$SITE_DIR/uploads.ini" <<INI
+upload_max_filesize=${UPLOAD_MAX_FILESIZE}
+post_max_size=${POST_MAX_SIZE}
+memory_limit=${MEMORY_LIMIT}
+INI
+    (cd "$SITE_DIR" && docker compose restart wordpress)
+  else
+    echo -e "${GREEN}Sin cambios detectados. No se reinicia.${NC}"
+  fi
+}
+
 # MAIN
 [ "$EUID" -ne 0 ] && echo -e "${RED}Este script debe ejecutarse como root.${NC}" && exit 1
-
 check_dependencies
 mkdir -p "$BASE_DIR"
 ensure_network
 
 case "$1" in
-  create) [ -n "$2" ] && create_instance "$2" || usage ;;
-  start)  [ -n "$2" ] && start_instance "$2" || usage ;;
-  stop)   [ -n "$2" ] && stop_instance "$2" || usage ;;
-  delete) [ -n "$2" ] && delete_instance "$2" || usage ;;
-  list)   list_instances ;;
-  *)      usage ;;
+  create)        [ "$2" ] && create_instance "$2" || usage ;;
+  start)         [ "$2" ] && start_instance "$2" || usage ;;
+  stop)          [ "$2" ] && stop_instance "$2" || usage ;;
+  delete)        [ "$2" ] && delete_instance "$2" || usage ;;
+  list)          list_instances ;;
+  config)        [ "$2" ] && config_instance "$2" || usage ;;
+  edit-config)   [ "$2" ] && edit_config_instance "$2" "$3" || usage ;;
+  help)          usage ;;
+  *)             usage ;;
 esac
