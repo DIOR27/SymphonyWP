@@ -1,0 +1,35 @@
+services:
+  wordpress:
+    image: wordpress:php8.1-apache
+    restart: always
+    ports:
+      - "{{ port }}:80"
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress
+      WORDPRESS_DB_NAME: wordpress
+    volumes:
+      - ./wp-content:/var/www/html/wp-content
+    networks:
+      - {{ site_name }}_net
+
+  db:
+    image: mysql:latest
+    restart: always
+    environment:
+      MYSQL_DATABASE: wordpress
+      MYSQL_USER: wordpress
+      MYSQL_PASSWORD: wordpress
+      MYSQL_ROOT_PASSWORD: root
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - {{ site_name }}_net
+
+volumes:
+  db_data:
+
+networks:
+  {{ site_name }}_net:
+    driver: bridge
