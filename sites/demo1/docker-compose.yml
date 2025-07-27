@@ -4,7 +4,7 @@ services:
     image: wordpress:php8.1-apache
     restart: always
     ports:
-      - "1588:80"
+      - "38627:80"
     environment:
       WORDPRESS_DB_HOST: db
       WORDPRESS_DB_USER: wordpress
@@ -16,7 +16,7 @@ services:
       - demo1_net
 
   db:
-    image: mysql:5.7
+    image: mysql:latest
     restart: always
     environment:
       MYSQL_DATABASE: wordpress

@@ -2,6 +2,11 @@
     "demo1": {
         "path": "/home/dorellana/wp-manager/sites/demo1",
         "webserver": "apache",
-        "port": 1588
+        "port": 38627
+    },
+    "demo3": {
+        "path": "/home/dorellana/wp-manager/sites/demo3",
+        "webserver": "apache",
+        "port": 50611
     }
 }
