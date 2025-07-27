@@ -66,8 +66,13 @@ def create(name: str, webserver: str = typer.Option("apache", help="Tipo de serv
     with builtins.open(site_path / "docker-compose.yml", "w") as f:
         f.write(output)
 
-    if webserver == "nginx":
-        shutil.copy(TEMPLATES_DIR / "nginx.conf", site_path / "nginx.conf")
+        if webserver == "nginx":
+            nginx_conf_dir = site_path / "nginx" / "conf.d"
+            nginx_conf_dir.mkdir(parents=True, exist_ok=True)
+            nginx_template = env.get_template("nginx/default.conf.j2")
+            nginx_output = nginx_template.render()
+            with builtins.open(nginx_conf_dir / "default.conf", "w") as f:
+                f.write(nginx_output)
 
     (site_path / ".env").write_text(f"""
 SITE_NAME={name}
