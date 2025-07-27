@@ -80,7 +80,9 @@ MYSQL_ROOT_PASSWORD=root
     typer.echo("[*] Añadiendo entrada al archivo hosts...")
     add_hosts_entry(f"{name}.local")
 
-    typer.echo(f"[+] Instancia creada correctamente en el puerto {port}. Ejecuta 'wp-manager start {name}' para iniciarla.")
+    typer.echo(f"[+] Instancia creada correctamente en el puerto {port}.")
+
+    start(name, port)
 
 
 @app.command()
@@ -96,7 +98,7 @@ def list():
 
 
 @app.command()
-def start(name: str):
+def start(name: str, port: int = None):
     check_docker()
     config = load_config()
     if name not in config:
@@ -107,6 +109,8 @@ def start(name: str):
     typer.echo(f"[*] Iniciando instancia '{name}'...")
     subprocess.run(["docker", "compose", "up", "-d"], cwd=path)
     typer.echo("[+] Instancia iniciada.")
+    if port:
+        typer.echo(f"[*] Accede a tu sitio en http://localhost:{port}")
 
 
 @app.command()
