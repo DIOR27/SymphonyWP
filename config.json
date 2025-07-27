@@ -1,0 +1,7 @@
+{
+    "demo1": {
+        "path": "/home/dorellana/wp-manager/sites/demo1",
+        "webserver": "apache",
+        "port": 1588
+    }
+}
