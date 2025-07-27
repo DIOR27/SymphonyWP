@@ -4,10 +4,11 @@ import shutil
 import json
 import subprocess
 import webbrowser
+import platform
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 import typer
-from docker_utils import check_docker, add_hosts_entry, remove_hosts_entry, generate_random_port
+from docker_utils import check_docker, generate_random_port
 
 app = typer.Typer()
 
@@ -15,9 +16,20 @@ BASE_DIR = Path(__file__).resolve().parent
 SITES_DIR = BASE_DIR / "sites"
 TEMPLATES_DIR = BASE_DIR / "templates"
 CONFIG_FILE = BASE_DIR / "config.json"
+HOSTCTL_SCRIPT = str(BASE_DIR / "hostctl.py")
 
 TEMPLATES_DIR.mkdir(exist_ok=True)
 SITES_DIR.mkdir(exist_ok=True)
+
+
+def elevate_and_run(args):
+    if platform.system() == "Windows":
+        subprocess.run([
+            "powershell", "-Command",
+            f"Start-Process python -ArgumentList {','.join(repr(a) for a in args)} -Verb RunAs"
+        ])
+    else:
+        subprocess.run(["sudo", "python3"] + args)
 
 
 def load_config():
@@ -57,7 +69,6 @@ def create(name: str, webserver: str = typer.Option("apache", help="Tipo de serv
     if webserver == "nginx":
         shutil.copy(TEMPLATES_DIR / "nginx.conf", site_path / "nginx.conf")
 
-    # Generar archivo .env con info básica
     (site_path / ".env").write_text(f"""
 SITE_NAME={name}
 WEB_SERVER={webserver}
@@ -78,10 +89,9 @@ MYSQL_ROOT_PASSWORD=root
     save_config(config)
 
     typer.echo("[*] Añadiendo entrada al archivo hosts...")
-    add_hosts_entry(f"{name}.local")
+    elevate_and_run([HOSTCTL_SCRIPT, "add-host", f"{name}.local"])
 
     typer.echo(f"[+] Instancia creada correctamente en el puerto {port}.")
-
     start(name, port)
 
 
@@ -141,11 +151,11 @@ def delete(name: str):
     typer.echo("[*] Eliminando contenedores, volúmenes y red...")
     subprocess.run(["docker", "compose", "down", "-v"], cwd=path)
 
-    typer.echo("[*] Borrando archivos de la instancia...")
-    shutil.rmtree(path)
-
     typer.echo("[*] Eliminando entrada en archivo hosts...")
-    remove_hosts_entry(f"{name}.local")
+    elevate_and_run([HOSTCTL_SCRIPT, "remove-host", f"{name}.local"])
+
+    typer.echo("[*] Borrando archivos de la instancia...")
+    elevate_and_run([HOSTCTL_SCRIPT, "rm-path", str(path)])
 
     del config[name]
     save_config(config)
