@@ -1,12 +1,5 @@
-import builtins
+import builtins, os, time, json, webbrowser, platform, subprocess, threading, itertools
 import requests
-import time
-import itertools
-import threading
-import json
-import subprocess
-import webbrowser
-import platform
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 import typer
@@ -189,6 +182,44 @@ def open(name: str):
     url = f"http://localhost:{port}"
     webbrowser.open(url)
     typer.echo(f"[*] Abriendo {url}")
+
+@app.command()
+def configure(name: str, editor: str = typer.Option(None, help="Editor a utilizar (ej. nano, code, vim, etc.)")):
+    config = load_config()
+    if name not in config:
+        typer.echo(f"[!] Instancia '{name}' no encontrada.")
+        raise typer.Exit(1)
+
+    site_path = Path(config[name]['path'])
+
+    files_to_edit = [
+        site_path / ".env",
+        site_path / "php.ini"
+    ]
+    if (site_path / "nginx" / "conf.d" / "default.conf").exists():
+        files_to_edit.append(site_path / "nginx" / "conf.d" / "default.conf")
+    if (site_path / "apache" / "apache2.conf").exists():
+        files_to_edit.append(site_path / "apache" / "apache2.conf")
+
+    typer.echo("[*] Archivos a configurar:")
+    for i, file in enumerate(files_to_edit):
+        typer.echo(f"  {i+1}. {file}")
+
+    for file in files_to_edit:
+        if not file.exists():
+            typer.echo(f"[!] El archivo {file} no existe.")
+            continue
+
+        typer.echo(f"[*] Abriendo {file}...")
+        if editor:
+            subprocess.run([editor, str(file)])
+        else:
+            if platform.system() == "Windows":
+                os.startfile(file)
+            elif platform.system() == "Darwin":
+                subprocess.run(["open", str(file)])
+            else:
+                subprocess.run(["xdg-open", str(file)])
 
 
 def wait_for_site(port: int, timeout: int = 30):
