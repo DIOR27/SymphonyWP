@@ -28,7 +28,7 @@ A cross-platform CLI to easily create, manage, and launch multiple isolated Word
 ### 🐧 Linux / macOS
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/your-username/symphonywp/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/DIOR27/SymphonyWP/main/install.sh | bash
 ```
 
 You may need to restart your terminal or run `source ~/.bashrc` after installation.
@@ -41,7 +41,7 @@ Run this from PowerShell as administrator:
 
 ```powershell
 Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
-irm https://raw.githubusercontent.com/your-username/symphonywp/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/DIOR27/SymphonyWP/main/install.ps1 | iex
 ```
 
 This will install `pipx` (if needed), set your path, and install `symphony`.
