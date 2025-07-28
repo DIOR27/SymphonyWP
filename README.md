@@ -94,4 +94,5 @@ pipx uninstall symphony
 
 ## 📄 License
 
-MIT License © 2025 - SymphonyWP Contributors
+This project is released under the [GNU General Public License](https://www.gnu.org/licenses/gpl-3.0.en.html).
+
