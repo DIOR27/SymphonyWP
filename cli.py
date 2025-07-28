@@ -1,14 +1,32 @@
-import builtins, os, time, json, webbrowser, platform, subprocess, threading, itertools
-import requests
-from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
-import typer, locale
+from pathlib import Path
+
 from docker_utils import check_docker, generate_random_port
 
-lang = (locale.getlocale()[0] or '').lower()
-app = typer.Typer()
+import builtins, os, time, json, webbrowser, platform, subprocess, threading, itertools
+import typer, locale, gettext
+import requests
 
 BASE_DIR = Path(__file__).resolve().parent
+
+def setup_i18n():
+    lang = (locale.getlocale()[0] or "es").split("_")[0]
+    localedir = str(BASE_DIR / "locales")
+    try:
+        t = gettext.translation("cli", localedir=localedir, languages=[lang])
+        t.install()
+        return t.gettext
+    except FileNotFoundError:
+        return lambda s: s
+
+
+_ = setup_i18n()
+
+
+lang = os.getenv("CLI_LANG") or (locale.getlocale()[0] or 'es').split('_')[0]
+
+app = typer.Typer()
+
 SITES_DIR = BASE_DIR / "sites"
 TEMPLATES_DIR = BASE_DIR / "templates"
 CONFIG_FILE = BASE_DIR / "config.json"
@@ -20,10 +38,13 @@ SITES_DIR.mkdir(exist_ok=True)
 
 def elevate_and_run(args):
     if platform.system() == "Windows":
-        subprocess.run([
-            "powershell", "-Command",
-            f"Start-Process python -ArgumentList {','.join(repr(a) for a in args)} -Verb RunAs"
-        ])
+        subprocess.run(
+            [
+                "powershell",
+                "-Command",
+                f"Start-Process python -ArgumentList {','.join(repr(a) for a in args)} -Verb RunAs",
+            ]
+        )
     else:
         subprocess.run(["sudo", "python3"] + args)
 
@@ -34,13 +55,19 @@ def load_config():
     with builtins.open(CONFIG_FILE) as f:
         return json.load(f)
 
+
 def save_config(data):
-    with builtins.open(CONFIG_FILE, 'w') as f:
+    with builtins.open(CONFIG_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
 
 @app.command()
-def create(name: str, webserver: str = typer.Option("apache", help="Tipo de servidor web: apache o nginx")):
+def create(
+    name: str,
+    webserver: str = typer.Option(
+        "apache", help="Tipo de servidor web: apache o nginx"
+    ),
+):
     check_docker()
     if webserver not in ["apache", "nginx"]:
         typer.echo("\n[!] El tipo de servidor debe ser 'apache' o 'nginx'.")
@@ -69,10 +96,11 @@ def create(name: str, webserver: str = typer.Option("apache", help="Tipo de serv
             nginx_output = nginx_template.render()
             with builtins.open(nginx_conf_dir / "default.conf", "w") as f:
                 f.write(nginx_output)
-    
+
     (body_size := "256M")
 
-    (site_path / ".env").write_text(f"""
+    (site_path / ".env").write_text(
+        f"""
 SITE_NAME={name}
 WEB_SERVER={webserver}
 PORT={port}
@@ -82,23 +110,23 @@ WORDPRESS_DB_PASSWORD=wordpress
 WORDPRESS_DB_NAME=wordpress
 MYSQL_ROOT_PASSWORD=root
 CLIENT_MAX_BODY_SIZE={body_size}
-""".strip() + "\n")
-    (site_path / "php.ini").write_text("""
+""".strip()
+        + "\n"
+    )
+    (site_path / "php.ini").write_text(
+        """
 upload_max_filesize = 256M
 post_max_size = 256M
 memory_limit = 512M
-""".strip() + "\n")
-
+""".strip()
+        + "\n"
+    )
 
     config = load_config()
-    config[name] = {
-        "path": str(site_path),
-        "webserver": webserver,
-        "port": port
-    }
+    config[name] = {"path": str(site_path), "webserver": webserver, "port": port}
     save_config(config)
 
-    typer.echo("[*] Añadiendo entrada al archivo hosts...")
+    typer.echo(_("[*] Añadiendo entrada al archivo hosts..."))
     elevate_and_run([HOSTCTL_SCRIPT, "add-host", f"{name}.local"])
 
     typer.echo(f"[+] Instancia creada correctamente en el puerto {port}.")
@@ -109,12 +137,14 @@ memory_limit = 512M
 def list():
     config = load_config()
     if not config:
-        typer.echo("\n[!] No hay instancias registradas.")
+        typer.echo(_("\n[!] No hay instancias registradas."))
         raise typer.Exit()
 
-    typer.echo("\nInstancias registradas:")
+    typer.echo(_("\nInstancias registradas:"))
     for name, data in config.items():
-        typer.echo(f"- {name} (web: {data.get('webserver', 'apache')}, port: {data.get('port', 80)})")
+        typer.echo(
+            f"- {name} (web: {data.get('webserver', 'apache')}, port: {data.get('port', 80)})"
+        )
 
 
 @app.command()
@@ -122,10 +152,10 @@ def start(name: str, port: int = None):
     check_docker()
     config = load_config()
     if name not in config:
-        typer.echo("\n[!] Instancia no encontrada.")
+        typer.echo(_("\n[!] Instancia no encontrada."))
         raise typer.Exit(1)
 
-    path = Path(config[name]['path'])
+    path = Path(config[name]["path"])
     port = port or config[name].get("port", 80)
 
     typer.echo(f"[*] Iniciando instancia '{name}'...")
@@ -141,71 +171,83 @@ def stop(name: str):
     check_docker()
     config = load_config()
     if name not in config:
-        typer.echo("\n[!] Instancia no encontrada.")
+        typer.echo(_("\n[!] Instancia no encontrada."))
         raise typer.Exit(1)
 
-    path = Path(config[name]['path'])
+    path = Path(config[name]["path"])
     typer.echo(f"[*] Deteniendo instancia '{name}'...")
     subprocess.run(["docker", "compose", "down"], cwd=path)
-    typer.echo("[+] Instancia detenida.")
+    typer.echo(_("[+] Instancia detenida."))
 
 
 @app.command()
-def delete(name: str, yes: bool = typer.Option(False, "--yes", "-y", help="Omitir confirmación interactiva")
+def delete(
+    name: str,
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Omitir confirmación interactiva"
+    ),
 ):
     check_docker()
     config = load_config()
     if name not in config:
-        typer.echo("\n[!] Instancia no encontrada.")
+        typer.echo(_("\n[!] Instancia no encontrada."))
         raise typer.Exit(1)
 
-    path = Path(config[name]['path'])
-    if not yes and not localized_confirm("¿Estás seguro de eliminar esta instancia COMPLETAMENTE (contenedor, volúmenes, red, archivos, hosts)?"):
-        typer.echo("[*] Operación cancelada.")
+    path = Path(config[name]["path"])
+    if not yes and not localized_confirm(
+        _("¿Estás seguro de eliminar esta instancia COMPLETAMENTE (contenedor, volúmenes, red, archivos, hosts)?")
+    ):
+        typer.echo(_("[*] Operación cancelada."))
         raise typer.Exit()
 
-
-    typer.echo("[*] Eliminando contenedores, volúmenes y red...")
+    typer.echo(_("[*] Eliminando contenedores, volúmenes y red..."))
     subprocess.run(["docker", "compose", "down", "-v"], cwd=path)
 
-    typer.echo("[*] Eliminando entrada en archivo hosts...")
+    typer.echo(_("[*] Eliminando entrada en archivo hosts..."))
     elevate_and_run([HOSTCTL_SCRIPT, "remove-host", f"{name}.local"])
 
-    typer.echo("[*] Borrando archivos de la instancia...")
+    typer.echo(_("[*] Borrando archivos de la instancia..."))
     elevate_and_run([HOSTCTL_SCRIPT, "rm-path", str(path)])
 
     del config[name]
     save_config(config)
 
-    typer.echo("[+] Instancia eliminada completamente.")
+    typer.echo(_("[+] Instancia eliminada completamente."))
 
 
 @app.command()
 def open(name: str):
     config = load_config()
     if name not in config:
-        typer.echo("[!] Instancia no encontrada.")
+        typer.echo(_("[!] Instancia no encontrada."))
         raise typer.Exit(1)
     port = config[name].get("port", 80)
     url = f"http://localhost:{port}"
     webbrowser.open(url)
     typer.echo(f"[*] Abriendo {url}")
 
+
 @app.command()
 @app.command()
 def configure(
     name: str,
-    editor: str = typer.Option(None, help="Editor para abrir los archivos (nano, code, etc.)"),
-    upload_max_filesize: str = typer.Option(None, help="Tamaño máximo de archivos (ej: 256M)"),
+    editor: str = typer.Option(
+        None, help="Editor para abrir los archivos (nano, code, etc.)"
+    ),
+    upload_max_filesize: str = typer.Option(
+        None, help="Tamaño máximo de archivos (ej: 256M)"
+    ),
     post_max_size: str = typer.Option(None, help="Tamaño máximo de POST (ej: 256M)"),
-    max_execution_time: str = typer.Option(None, help="Tiempo máximo de ejecución (segundos)")
+    max_execution_time: str = typer.Option(
+        None, help="Tiempo máximo de ejecución (segundos)"
+    ),
 ):
     config = load_config()
     if name not in config:
         typer.echo(f"[!] Instancia '{name}' no encontrada.")
         raise typer.Exit(1)
 
-    site_path = Path(config[name]['path'])
+    site_path = Path(config[name]["path"])
     php_ini_path = site_path / "php.ini"
 
     # Si se pasó alguna opción de configuración, editar php.ini
@@ -237,21 +279,23 @@ def configure(
         with php_ini_path.open("w") as f:
             f.writelines(ini_lines)
 
-        typer.echo("[+] Configuración actualizada.")
+        typer.echo(_("[+] Configuración actualizada."))
         return
 
     # Si no hay claves, abre archivos con editor
     files_to_edit = [site_path / ".env", php_ini_path]
     nginx_path = site_path / "nginx" / "conf.d" / "default.conf"
     apache_path = site_path / "apache" / "apache2.conf"
-    if nginx_path.exists(): files_to_edit.append(nginx_path)
-    if apache_path.exists(): files_to_edit.append(apache_path)
+    if nginx_path.exists():
+        files_to_edit.append(nginx_path)
+    if apache_path.exists():
+        files_to_edit.append(apache_path)
 
     typer.echo("[*] Archivos a configurar:")
     for i, file in enumerate(files_to_edit):
         typer.echo(f"  {i+1}. {file}")
         if not file.exists():
-            typer.echo(f"    [!] No existe.")
+            typer.echo(_(f"    [!] No existe."))
             continue
 
         if editor:
@@ -272,7 +316,10 @@ def wait_for_site(port: int, timeout: int = 30):
 
     def spin():
         while not done:
-            typer.echo(f"\r[*] Esperando que el sitio en {url} esté disponible... {next(spinner)}", nl=False)
+            typer.echo(
+                f"\r[*] Esperando que el sitio en {url} esté disponible... {next(spinner)}",
+                nl=False,
+            )
             time.sleep(0.2)
 
     thread = threading.Thread(target=spin)
@@ -281,7 +328,11 @@ def wait_for_site(port: int, timeout: int = 30):
     for _ in range(timeout):
         try:
             r = requests.get(url, timeout=2)
-            if r.status_code in [200, 302, 403]:  # WordPress puede responder 403 cuando aún no está instalado
+            if r.status_code in [
+                200,
+                302,
+                403,
+            ]:  # WordPress puede responder 403 cuando aún no está instalado
                 done = True
                 thread.join()
                 typer.echo(f"\r[+] Sitio disponible en {url}                  ")
@@ -294,16 +345,18 @@ def wait_for_site(port: int, timeout: int = 30):
     thread.join()
     typer.echo(f"\r[!] Tiempo agotado. Intenta abrir manualmente: {url}")
 
+
 def localized_confirm(message: str) -> bool:
     import locale
-    lang = (locale.getlocale()[0] or '').lower()
-    
+
+    lang = (locale.getlocale()[0] or "").lower()
+
     if lang.startswith("es"):
-        yes_key = 's'
-        no_key = 'n'
+        yes_key = "s"
+        no_key = "n"
     else:
-        yes_key = 'y'
-        no_key = 'n'
+        yes_key = "y"
+        no_key = "n"
 
     prompt = f"{message} [{yes_key.lower()}/{no_key.upper()}]: "
     while True:
@@ -315,7 +368,10 @@ def localized_confirm(message: str) -> bool:
         elif response == no_key:
             return False
         else:
-            typer.echo(f"Por favor, ingresa '{yes_key}' o '{no_key}' (Enter = {no_key.upper()}).")
+            typer.echo(
+                f"Por favor, ingresa '{yes_key}' o '{no_key}' (Enter = {no_key.upper()})."
+            )
+
 
 if __name__ == "__main__":
     app()

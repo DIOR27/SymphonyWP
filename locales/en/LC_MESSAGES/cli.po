@@ -1,0 +1,68 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2025-07-28 08:50-0500\n"
+"PO-Revision-Date: 2025-07-28 09:00-0500\n"
+"Last-Translator: DIOR27 <dior27@duck.com>\n"
+"Language-Team: English\n"
+"Language: en\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: cli.py:128
+msgid "[*] Añadiendo entrada al archivo hosts..."
+msgstr "[*] Adding entry to the hosts file..."
+
+#: cli.py:139
+msgid "\n[!] No hay instancias registradas."
+msgstr "\n[!] No instances registered."
+
+#: cli.py:142
+msgid "\nInstancias registradas:"
+msgstr "\nRegistered instances:"
+
+#: cli.py:154 cli.py:173 cli.py:192
+msgid "\n[!] Instancia no encontrada."
+msgstr "\n[!] Instance not found."
+
+#: cli.py:179
+msgid "[+] Instancia detenida."
+msgstr "[+] Instance stopped."
+
+#: cli.py:197
+msgid "¿Estás seguro de eliminar esta instancia COMPLETAMENTE (contenedor, volúmenes, red, archivos, hosts)?"
+msgstr "Are you sure you want to COMPLETELY delete this instance (container, volumes, network, files, hosts)?"
+
+#: cli.py:199
+msgid "[*] Operación cancelada."
+msgstr "[*] Operation canceled."
+
+#: cli.py:202
+msgid "[*] Eliminando contenedores, volúmenes y red..."
+msgstr "[*] Removing containers, volumes, and network..."
+
+#: cli.py:205
+msgid "[*] Eliminando entrada en archivo hosts..."
+msgstr "[*] Removing entry from hosts file..."
+
+#: cli.py:208
+msgid "[*] Borrando archivos de la instancia..."
+msgstr "[*] Deleting instance files..."
+
+#: cli.py:214
+msgid "[+] Instancia eliminada completamente."
+msgstr "[+] Instance fully deleted."
+
+#: cli.py:221
+msgid "[!] Instancia no encontrada."
+msgstr "[!] Instance not found."
+
+#: cli.py:281
+msgid "[+] Configuración actualizada."
+msgstr "[+] Configuration updated."
+
+#: cli.py:297
+msgid "    [!] No existe."
+msgstr "    [!] Does not exist."
