@@ -1,3 +1,4 @@
 .vscode/
 sites/
 config.json
+__pycache__/
