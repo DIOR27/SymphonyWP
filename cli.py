@@ -86,6 +86,12 @@ WORDPRESS_DB_PASSWORD=wordpress
 WORDPRESS_DB_NAME=wordpress
 MYSQL_ROOT_PASSWORD=root
 """.strip() + "\n")
+    (site_path / "php.ini").write_text("""
+upload_max_filesize = 256M
+post_max_size = 256M
+memory_limit = 512M
+""".strip() + "\n")
+
 
     config = load_config()
     config[name] = {
