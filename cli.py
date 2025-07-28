@@ -184,33 +184,68 @@ def open(name: str):
     typer.echo(f"[*] Abriendo {url}")
 
 @app.command()
-def configure(name: str, editor: str = typer.Option(None, help="Editor a utilizar (ej. nano, code, vim, etc.)")):
+@app.command()
+def configure(
+    name: str,
+    editor: str = typer.Option(None, help="Editor para abrir los archivos (nano, code, etc.)"),
+    upload_max_filesize: str = typer.Option(None, help="Tamaño máximo de archivos (ej: 256M)"),
+    post_max_size: str = typer.Option(None, help="Tamaño máximo de POST (ej: 256M)"),
+    max_execution_time: str = typer.Option(None, help="Tiempo máximo de ejecución (segundos)")
+):
     config = load_config()
     if name not in config:
         typer.echo(f"[!] Instancia '{name}' no encontrada.")
         raise typer.Exit(1)
 
     site_path = Path(config[name]['path'])
+    php_ini_path = site_path / "php.ini"
 
-    files_to_edit = [
-        site_path / ".env",
-        site_path / "php.ini"
-    ]
-    if (site_path / "nginx" / "conf.d" / "default.conf").exists():
-        files_to_edit.append(site_path / "nginx" / "conf.d" / "default.conf")
-    if (site_path / "apache" / "apache2.conf").exists():
-        files_to_edit.append(site_path / "apache" / "apache2.conf")
+    # Si se pasó alguna opción de configuración, editar php.ini
+    if any([upload_max_filesize, post_max_size, max_execution_time]):
+        typer.echo("[*] Modificando directivas de PHP...")
+
+        ini_lines = []
+        if php_ini_path.exists():
+            with php_ini_path.open() as f:
+                ini_lines = f.readlines()
+
+        def set_or_update(key: str, value: str):
+            updated = False
+            for i, line in enumerate(ini_lines):
+                if line.strip().startswith(f"{key}"):
+                    ini_lines[i] = f"{key} = {value}\n"
+                    updated = True
+                    break
+            if not updated:
+                ini_lines.append(f"{key} = {value}\n")
+
+        if upload_max_filesize:
+            set_or_update("upload_max_filesize", upload_max_filesize)
+        if post_max_size:
+            set_or_update("post_max_size", post_max_size)
+        if max_execution_time:
+            set_or_update("max_execution_time", max_execution_time)
+
+        with php_ini_path.open("w") as f:
+            f.writelines(ini_lines)
+
+        typer.echo("[+] Configuración actualizada.")
+        return
+
+    # Si no hay claves, abre archivos con editor
+    files_to_edit = [site_path / ".env", php_ini_path]
+    nginx_path = site_path / "nginx" / "conf.d" / "default.conf"
+    apache_path = site_path / "apache" / "apache2.conf"
+    if nginx_path.exists(): files_to_edit.append(nginx_path)
+    if apache_path.exists(): files_to_edit.append(apache_path)
 
     typer.echo("[*] Archivos a configurar:")
     for i, file in enumerate(files_to_edit):
         typer.echo(f"  {i+1}. {file}")
-
-    for file in files_to_edit:
         if not file.exists():
-            typer.echo(f"[!] El archivo {file} no existe.")
+            typer.echo(f"    [!] No existe.")
             continue
 
-        typer.echo(f"[*] Abriendo {file}...")
         if editor:
             subprocess.run([editor, str(file)])
         else:
