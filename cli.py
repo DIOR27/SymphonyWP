@@ -68,6 +68,8 @@ def create(name: str, webserver: str = typer.Option("apache", help="Tipo de serv
             nginx_output = nginx_template.render()
             with builtins.open(nginx_conf_dir / "default.conf", "w") as f:
                 f.write(nginx_output)
+    
+    (body_size := "256M")
 
     (site_path / ".env").write_text(f"""
 SITE_NAME={name}
@@ -78,6 +80,7 @@ WORDPRESS_DB_USER=wordpress
 WORDPRESS_DB_PASSWORD=wordpress
 WORDPRESS_DB_NAME=wordpress
 MYSQL_ROOT_PASSWORD=root
+CLIENT_MAX_BODY_SIZE={body_size}
 """.strip() + "\n")
     (site_path / "php.ini").write_text("""
 upload_max_filesize = 256M
