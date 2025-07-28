@@ -2,9 +2,10 @@ import builtins, os, time, json, webbrowser, platform, subprocess, threading, it
 import requests
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
-import typer
+import typer, locale
 from docker_utils import check_docker, generate_random_port
 
+lang = (locale.getlocale()[0] or '').lower()
 app = typer.Typer()
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -150,7 +151,8 @@ def stop(name: str):
 
 
 @app.command()
-def delete(name: str):
+def delete(name: str, yes: bool = typer.Option(False, "--yes", "-y", help="Omitir confirmación interactiva")
+):
     check_docker()
     config = load_config()
     if name not in config:
@@ -158,7 +160,10 @@ def delete(name: str):
         raise typer.Exit(1)
 
     path = Path(config[name]['path'])
-    typer.confirm("¿Estás seguro de eliminar esta instancia COMPLETAMENTE (contenedor, volúmenes, red, archivos, hosts)?", abort=True)
+    if not yes and not localized_confirm("¿Estás seguro de eliminar esta instancia COMPLETAMENTE (contenedor, volúmenes, red, archivos, hosts)?"):
+        typer.echo("[*] Operación cancelada.")
+        raise typer.Exit()
+
 
     typer.echo("[*] Eliminando contenedores, volúmenes y red...")
     subprocess.run(["docker", "compose", "down", "-v"], cwd=path)
@@ -289,6 +294,28 @@ def wait_for_site(port: int, timeout: int = 30):
     thread.join()
     typer.echo(f"\r[!] Tiempo agotado. Intenta abrir manualmente: {url}")
 
+def localized_confirm(message: str) -> bool:
+    import locale
+    lang = (locale.getlocale()[0] or '').lower()
+    
+    if lang.startswith("es"):
+        yes_key = 's'
+        no_key = 'n'
+    else:
+        yes_key = 'y'
+        no_key = 'n'
+
+    prompt = f"{message} [{yes_key.lower()}/{no_key.upper()}]: "
+    while True:
+        response = input(prompt).strip().lower()
+        if response == "":
+            return False  # default is No
+        elif response == yes_key:
+            return True
+        elif response == no_key:
+            return False
+        else:
+            typer.echo(f"Por favor, ingresa '{yes_key}' o '{no_key}' (Enter = {no_key.upper()}).")
 
 if __name__ == "__main__":
     app()
