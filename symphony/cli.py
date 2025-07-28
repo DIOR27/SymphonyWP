@@ -1,7 +1,7 @@
 from jinja2 import Environment, FileSystemLoader
 from pathlib import Path
 
-from docker_utils import check_docker, generate_random_port
+from symphony.docker_utils import check_docker, generate_random_port
 
 import builtins, os, time, json, webbrowser, platform, subprocess, threading, itertools
 import typer, locale, gettext
