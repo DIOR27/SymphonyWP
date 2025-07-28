@@ -1,6 +1,8 @@
 import builtins
-import os
-import shutil
+import requests
+import time
+import itertools
+import threading
 import json
 import subprocess
 import webbrowser
@@ -121,11 +123,14 @@ def start(name: str, port: int = None):
         raise typer.Exit(1)
 
     path = Path(config[name]['path'])
+    port = port or config[name].get("port", 80)
+
     typer.echo(f"[*] Iniciando instancia '{name}'...")
     subprocess.run(["docker", "compose", "up", "-d"], cwd=path)
-    typer.echo("[+] Instancia iniciada.")
-    if port:
-        typer.echo(f"[*] Accede a tu sitio en http://localhost:{port}")
+
+    wait_for_site(port)
+
+    typer.echo(f"[*] Accede a tu sitio en http://localhost:{port}")
 
 
 @app.command()
@@ -178,6 +183,36 @@ def open(name: str):
     url = f"http://localhost:{port}"
     webbrowser.open(url)
     typer.echo(f"[*] Abriendo {url}")
+
+
+def wait_for_site(port: int, timeout: int = 30):
+    url = f"http://localhost:{port}"
+    spinner = itertools.cycle(["⠋", "⠙", "⠸", "⠴", "⠦", "⠇"])
+    done = False
+
+    def spin():
+        while not done:
+            typer.echo(f"\r[*] Esperando que el sitio en {url} esté disponible... {next(spinner)}", nl=False)
+            time.sleep(0.2)
+
+    thread = threading.Thread(target=spin)
+    thread.start()
+
+    for _ in range(timeout):
+        try:
+            r = requests.get(url, timeout=2)
+            if r.status_code in [200, 302, 403]:  # WordPress puede responder 403 cuando aún no está instalado
+                done = True
+                thread.join()
+                typer.echo(f"\r[+] Sitio disponible en {url}                  ")
+                return
+        except requests.exceptions.RequestException:
+            pass
+        time.sleep(1)
+
+    done = True
+    thread.join()
+    typer.echo(f"\r[!] Tiempo agotado. Intenta abrir manualmente: {url}")
 
 
 if __name__ == "__main__":
